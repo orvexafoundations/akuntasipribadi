@@ -408,12 +408,17 @@
 </div>
 
 <script>
+/* Guard: cegah skrip ini berjalan dua kali di halaman yang sama
+   (mis. karena file ter-include ganda saat deploy) */
+if (!window.__bukuBesarLoaded) {
+window.__bukuBesarLoaded = true;
+(function(){
 /* =========================================================
    KONEKSI SUPABASE
    ========================================================= */
 const SUPABASE_URL = 'https://fsvjoxshyhpwxbnlgcgd.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmpveHNoeWhwd3hibmxnY2dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMTM3NDQsImV4cCI6MjA5OTU4OTc0NH0.9TDvizLcNqFUiFC-B3fukM4lSe2eb1xBU9R8b3gy8vg';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let state = { income: [], expense: [] };
 
@@ -424,7 +429,7 @@ function tampilkanStatus(teks, error){
 }
 
 async function muatData(){
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('transaksi')
     .select('*')
     .order('tanggal', { ascending: true });
@@ -445,7 +450,7 @@ async function muatData(){
 
 /* dengarkan perubahan realtime (kalau dibuka di device/tab lain) */
 function aktifkanRealtime(){
-  supabase
+  sb
     .channel('transaksi-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'transaksi' }, async () => {
       await muatData();
@@ -494,14 +499,14 @@ async function ubahSel(jenis, idx, field, value){
   row[field] = field === 'jumlah' ? parseFloat(value || 0) : value;
   const kolom = field === 'ket' ? 'keterangan' : field;
 
-  const { error } = await supabase.from('transaksi').update({ [kolom]: row[field] }).eq('id', row.id);
+  const { error } = await sb.from('transaksi').update({ [kolom]: row[field] }).eq('id', row.id);
   if(error){ tampilkanStatus('Gagal menyimpan perubahan: ' + error.message, true); }
   perbaruiSemua();
 }
 
 async function tambahBaris(jenis){
   const baris = { jenis, tanggal: new Date().toISOString().slice(0,10), keterangan: '', jumlah: 0 };
-  const { data, error } = await supabase.from('transaksi').insert(baris).select().single();
+  const { data, error } = await sb.from('transaksi').insert(baris).select().single();
   if(error){ tampilkanStatus('Gagal menambah baris: ' + error.message, true); return; }
   state[jenis].push({ id: data.id, tanggal: data.tanggal, ket: data.keterangan, jumlah: Number(data.jumlah) });
   renderTabel(jenis);
@@ -510,7 +515,7 @@ async function tambahBaris(jenis){
 
 async function hapusBaris(jenis, idx){
   const row = state[jenis][idx];
-  const { error } = await supabase.from('transaksi').delete().eq('id', row.id);
+  const { error } = await sb.from('transaksi').delete().eq('id', row.id);
   if(error){ tampilkanStatus('Gagal menghapus baris: ' + error.message, true); return; }
   state[jenis].splice(idx, 1);
   renderTabel(jenis);
@@ -521,7 +526,7 @@ async function hapusSemua(){
   if(!confirm('Yakin ingin menghapus seluruh data buku besar? Tindakan ini tidak dapat dibatalkan.')) return;
   const semuaId = [...state.income, ...state.expense].map(r => r.id);
   if(semuaId.length){
-    const { error } = await supabase.from('transaksi').delete().in('id', semuaId);
+    const { error } = await sb.from('transaksi').delete().in('id', semuaId);
     if(error){ tampilkanStatus('Gagal menghapus data: ' + error.message, true); return; }
   }
   state = { income: [], expense: [] };
@@ -699,6 +704,15 @@ document.getElementById('tglHariIni').textContent =
   perbaruiSemua();
   aktifkanRealtime();
 })();
+
+/* ekspos ke window supaya bisa dipanggil dari atribut onclick di HTML */
+window.tambahBaris = tambahBaris;
+window.hapusBaris = hapusBaris;
+window.ubahSel = ubahSel;
+window.hapusSemua = hapusSemua;
+
+})(); // tutup IIFE
+} // tutup guard anti dobel-eksekusi
 </script>
 
 </body>
